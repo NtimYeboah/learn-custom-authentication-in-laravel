@@ -14,7 +14,7 @@ return [
     */
 
     'defaults' => [
-        'guard' => 'web',
+        'guard' => 'custom',
         'passwords' => 'users',
     ],
 
@@ -45,6 +45,11 @@ return [
             'driver' => 'token',
             'provider' => 'users',
         ],
+
+        'custom' => [
+            'driver' => 'zendesk',
+            'provider' => 'users',
+        ],
     ],
 
     /*
@@ -66,9 +71,8 @@ return [
 
     'providers' => [
         'users' => [
-            'driver' => 'eloquent',
-            'model' => App\User::class,
-        ],
+            'driver' => 'zendesk'
+        ]
 
         // 'users' => [
         //     'driver' => 'database',

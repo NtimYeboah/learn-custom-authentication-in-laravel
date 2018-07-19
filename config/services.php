@@ -29,6 +29,12 @@ return [
         'secret' => env('SPARKPOST_SECRET'),
     ],
 
+    'zendesk' => [
+        'subdomain' => env('ZENDESK_SUBDOMAIN'),
+        'username' => env('ZENDESK_USERNAME'),
+        'token' => env('ZENDESK_TOKEN')
+    ],
+
     'stripe' => [
         'model' => App\User::class,
         'key' => env('STRIPE_KEY'),
