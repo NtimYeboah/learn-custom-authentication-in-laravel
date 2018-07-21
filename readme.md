@@ -1,60 +1,250 @@
-<p align="center"><img src="https://laravel.com/assets/img/components/logo-laravel.svg"></p>
+## Custom authentication using Zendesk as user provider
 
-<p align="center">
-<a href="https://travis-ci.org/laravel/framework"><img src="https://travis-ci.org/laravel/framework.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://poser.pugx.org/laravel/framework/d/total.svg" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://poser.pugx.org/laravel/framework/v/stable.svg" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://poser.pugx.org/laravel/framework/license.svg" alt="License"></a>
-</p>
+Adding authentication to Laravel application is a matter running ```php artisan make:auth``` and the authentication routes and views will be added to you application. The authentication system will fetch the user to be authenticated from the database when using the default authentication scaffold.
 
-## About Laravel
+In cases where users may not be in the database configured to be used with your application but are fetched from an external API, we can still use the default authentication system to authenticate these users in our application.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel attempts to take the pain out of development by easing common tasks used in the majority of web projects, such as:
+To do this, lets try to understand the authentication system of Laravel. 
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Laravel's authentication facilities are made up of "guards" and "providers".
 
-Laravel is accessible, yet powerful, providing tools needed for large, robust applications.
+Guards define how users are authenticated for each request. For example, Laravel ships with a [session](https://github.com/laravel/framework/blob/5.6/src/Illuminate/Auth/SessionGuard.php) guard which maintains state using session storage and cookies. There is also a [token](https://github.com/laravel/framework/blob/5.6/src/Illuminate/Auth/TokenGuard.php) guard for token based authentication.
 
-## Learning Laravel
+Providers define how users are retrieved from your persistent storage. Laravel ships with support for retrieving users using Eloquent and the database query builder.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of any modern web application framework, making it a breeze to get started learning the framework.
+In our case, we will be using Zendesk as the provider.
 
-If you're not in the mood to read, [Laracasts](https://laracasts.com) contains over 1100 video tutorials on a range of topics including Laravel, modern PHP, unit testing, JavaScript, and more. Boost the skill level of yourself and your entire team by digging into our comprehensive video library.
+### Using Zendesk as provider
 
-## Laravel Sponsors
+Laravel provides the `Illuminate\Contracts\Auth\UserProvider` and `Illuminate\Contracts\Auth\Authenticatable` contracts. 
+The implementation of `Illuminate\Contracts\Auth\Authenticatable` contract will have methods to fetch the user from Zendesk when email and password are provided.
 
-We would like to extend our thanks to the following sponsors for helping fund on-going Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell):
+The implementation of `Illuminate\Contracts\Auth\UserProvider` will fetch the user from Zendesk. Therefore the implementation of `Illuminate\Contracts\Auth\Authenticatable` will be injected in the implementation of `Illuminate\Contracts\Auth\UserProvider`.
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[Cubet Techno Labs](https://cubettech.com)**
-- **[British Software Development](https://www.britishsoftware.co)**
-- [Fragrantica](https://www.fragrantica.com)
-- [SOFTonSOFA](https://softonsofa.com/)
-- [User10](https://user10.com)
-- [Soumettre.fr](https://soumettre.fr/)
-- [CodeBrisk](https://codebrisk.com)
-- [1Forge](https://1forge.com)
-- [TECPRESSO](https://tecpresso.co.jp/)
-- [Runtime Converter](http://runtimeconverter.com/)
-- [WebL'Agence](https://weblagence.com/)
-- [Invoice Ninja](https://www.invoiceninja.com)
+In the default authentication, the [App\User.php](https://github.com/laravel/laravel/blob/master/app/User.php) class is an implementation of `Illuminate\Contracts\Auth\Authenticatable` contract.
 
-## Contributing
+In our case we will modify the `App\User.php` file to suit our needs.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+#### Implementing the Authenticatable contract
 
-## Security Vulnerabilities
+We will modify the `App\User.php` file and add methods to retrieve the user from Zendesk. The two most important methods are `retrieve` and `getById`. `retrieve` fetches the user from Zendesk and `getById` retrieves the user from session using an identifier. There are other methods defined since we are implementing the `Illuminate\Contracts\Auth\Authenticatable` contract.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+[https://github.com/NtimYeboah/laravel-zendesk-authentication/app/User.php](https://github.com/NtimYeboah/laravel-zendesk-authentication/blob/master/app/User.php)
 
-## License
+```php
+.
+.
+.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+use App\Traits\MakesHttpRequests;
+use Illuminate\Contracts\Auth\Authenticatable;
+
+class User extends Authenticatable
+{
+    use MakesHttpRequests;
+
+    .
+    .
+    .
+
+    /**
+     * Get user from Zendesk
+     * 
+     * @param array $credentials
+     * 
+     * @return \App\User
+     */
+    public function retrieve($credentials)
+    {
+        $url = 'https://' . config('services.zendesk.subdomain') . '.zendesk.com/api/v2/users/me.json';
+
+        $response = $this->get($url, [
+            'auth' => [
+                $credentials['email'],
+                $credentials['password']
+            ] 
+        ]);
+        
+        $user = json_decode((string) $response->getBody())->user;
+        session()->put('email', (string) $response->getBody());
+        
+        $this->username = $user->name;
+        $this->password = $credentials['password'];
+
+        return $this;
+    }
+
+    /**
+     * Retrieve user by identifier
+     * 
+     * @param string $identifier
+     * 
+     * @return mixed
+     */
+    public function getById($identifier)
+    {
+        return json_decode(session()->get($identifier))->user;
+    }
+
+    .
+    .
+    .
+}
+```
+
+#### Implementing the UserProvider contract
+
+The implementation of `Illuminate\Contracts\Auth\UserProvider` is responsible for fetching the implementation of `Illuminate\Contracts\Auth\Authenticatable` from Zendesk. The noticable methods are
+
+1. `retrieveById` which delegates the retrieval of the user from the session to the implementation of `Illuminate\Contracts\Auth\Authenticatable` thus the [User.php](https://github.com/NtimYeboah/laravel-zendesk-authentication/blob/master/app/User.php) class.
+
+2. `retrieveByCredentials` which retrieves the user from Zendesk when the email and password are provided. The retrieval of the user is delegated to the [User.php](https://github.com/NtimYeboah/laravel-zendesk-authentication/blob/master/app/User.php) class.
+
+3. `validateCredentials` which validates a user against the provided credentials. In this method, we check the password of the user against the password in the provided credentials.
+
+There are other methods that should be implemented since we are implementing an interface.
+
+[https://github.com/NtimYeboah/laravel-zendesk-authentication/app/Extensions/ZendeskUserProvider.php](https://github.com/NtimYeboah/laravel-zendesk-authentication/blob/master/app/Extensions/ZendeskUserProvider.php)
+
+```php
+
+use Illuminate\Contracts\Auth\UserProvider;
+
+class ZendeskUserProvider implements UserProvider
+{
+
+    /**
+     * The user to be authenticated
+     * 
+     * @var $user
+     */
+    public $user;
+
+    public function __construct(User $user)
+    {
+        $this->user = $user;
+    }
+
+    /**
+     * Retrieve a user by their unique identifier.
+     *
+     * @param  mixed  $identifier
+     * @return \Illuminate\Contracts\Auth\Authenticatable|null
+     */
+    public function retrieveById($identifier)
+    {
+        return $this->user->getById($identifier);
+    }
+
+    /**
+     * Retrieve a user by the given credentials.
+     *
+     * @param  array  $credentials
+     * @return \Illuminate\Contracts\Auth\Authenticatable|null
+     */
+    public function retrieveByCredentials(array $credentials)
+    {
+        if (! $credentials) {
+            return;
+        }
+
+        return $this->user->retrieve($credentials);
+    }
+
+     /**
+     * Validate a user against the given credentials.
+     *
+     * @param  \Illuminate\Contracts\Auth\Authenticatable  $user
+     * @param  array  $credentials
+     * @return bool
+     */
+    public function validateCredentials(Authenticatable $user, array $credentials)
+    {
+        return $user->password === $credentials['password'];
+    }
+
+    .
+    .
+    .
+
+```
+
+#### Registering the authentication provider
+
+We need to register the authentication provider so that Laravel will be aware and use it for authentication. In the `boot` method of the `AuthServiceProvider` we will register our authentication provider and guard. We will be using the session guard already included with Laravel. We will register both the provider and guard name as `zendesk`.
+
+[https://github.com/NtimYeboah/laravel-zendesk-authentication/app/Providers/AuthServiceProvider.phpp](https://github.com/NtimYeboah/laravel-zendesk-authentication/blob/master/app/Providers/AuthServiceProvider.php)
+
+```php
+
+use App\User;
+use Illuminate\Auth\SessionGuard;
+use App\Extensions\ZendeskUserProvider;
+
+.
+.
+.
+
+class AuthServiceProvider extends ServiceProvider
+{
+
+    .
+    .
+    .
+
+    /**
+     * Register any authentication / authorization services.
+     *
+     * @return void
+     */
+    public function boot()
+    {
+        $this->registerPolicies();
+
+        Auth::provider('zendesk', function ($app, array $config) {
+            return new ZendeskUserProvider($app->make(User::class));
+        });
+
+        Auth::extend('zendesk', function ($app, $name, array $config) {
+            return new SessionGuard('session', 
+                                    Auth::createUserProvider($config['provider']),
+                                    $app->make('session.store'),
+                                    $app->make('request'));
+        });
+    }
+}
+
+```
+
+Additionally, after registering the provider and guard, lets switch to use them in the authentication configuration file. Modify the `config/auth.php` to add the provider and guard. 
+Under the providers section, add the following
+
+```php
+
+'providers' => [
+    'users' => [
+        'driver' => 'zendesk'
+    ]
+
+```
+
+Under the guard section, append the following provider to the list of guards
+
+```php
+
+'custom' => [
+    'driver' => 'zendesk',
+    'provider' => 'users',
+],
+
+```
+
+And then finally, set the default guard to be used for authentication under the `defaults` key.
+```php
+
+'defaults' => [
+    'guard' => 'custom',
+    'passwords' => 'users',
+],
+
+```
